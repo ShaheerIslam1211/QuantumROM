@@ -1,0 +1,17 @@
+*Zone.Identifier*
+
+# macOS
+.DS_Store
+
+# Python
+.venv/
+
+# Local tools
+.local/
+
+# QuantumROM build cache/tools
+.quantumrom/
+
+# (optional)
+*.pyc
+__pycache__/
