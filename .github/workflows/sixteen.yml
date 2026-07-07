@@ -112,3 +112,4 @@ jobs:
           USE_UI_8_TETHERING_APEX: ${{ github.event.inputs.USE_UI_8_TETHERING_APEX }}
         run: |
            bash release.sh
+           
