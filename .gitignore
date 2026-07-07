@@ -15,3 +15,6 @@
 # (optional)
 *.pyc
 __pycache__/
+
+# For local builds not required for github workflows
+Firmware/

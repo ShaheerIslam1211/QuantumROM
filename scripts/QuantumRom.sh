@@ -2017,8 +2017,8 @@ APPLY_JDM_SPECIAL() {
 
 
 # PhotoEditor_AIFull ships long model filenames, but .info files reference short
-# names (objecteraser.tflite, etc.). Without symlinks the app crashes on open.
-# Also force CPU runtime — GPU TFLite often crashes on midrange Mali (e.g. A325F).
+# names (objecteraser.tflite, etc.). Without copies the app crashes on open.
+# GPU runtime is kept for eraser/styles/inpainting (same as working S23 port).
 FIX_PHOTO_EDITOR_AI() {
     if [ "$#" -ne 1 ]; then
         echo -e "Usage: ${FUNCNAME[0]} <EXTRACTED_FIRM_DIR>"
@@ -2078,21 +2078,6 @@ FIX_PHOTO_EDITOR_AI() {
             sed -i 's|inpainting\.tflite|12-11_PhotoEditor_SpotFixer_v3.0.tflite|g' "$IDB/inpainting.info"
     fi
 
-    # Force CPU — GPU TFLite delegate often crashes on Helio G80 / Mali-G52 (A325F)
-    local info
-    for info in \
-        "${SYS}/etc/objectremoval/db/"*.info \
-        "${SYS}/etc/shadowremoval/db/"*.info \
-        "${SYS}/etc/reflectionremoval/db/"*.info \
-        "${SYS}/etc/ailasso/db/"*.info \
-        "${SYS}/etc/ailassomatting/db/"*.info \
-        "${SYS}/etc/inpainting/db/"*.info \
-        "${SYS}/etc/style_transfer/db/"*.info
-    do
-        [ -f "$info" ] || continue
-        sed -i 's/"runtime": "gpu"/"runtime": "cpu"/g' "$info"
-    done
-
     # shadow_*.info ship model_path pointing at .info instead of .tflite
     if [ -f "${SYS}/etc/shadowremoval/db/shadow_removal.info" ]; then
         sed -i 's|shadow_removal\.info"|shadow_removal.tflite"|g' \
@@ -2126,50 +2111,143 @@ FIX_PHOTO_EDITOR_AI() {
         _pe_link_model "$SDB" "oil_paint.tflite" "12-8_PhotoEditor_StyleTransfer_v3.0_OilPaint.tflite"
         _pe_link_model "$SDB" "cubist.tflite" "12-9_PhotoEditor_StyleTransfer_v3.0_Cubist.tflite"
         _pe_link_model "$SDB" "pen_and_wash.tflite" "12-10_PhotoEditor_StyleTransfer_v3.0_PenAndWash.tflite"
+
+        # style.info lists short names — rewrite to long filenames (Styles / "Couldn't complete" fix)
+        if [ -f "$SDB/style.info" ]; then
+            sed -i \
+                -e 's|color_pencil\.tflite|12-1_PhotoEditor_StyleTransfer_v3.0_ColorPencil.tflite|g' \
+                -e 's|comic\.tflite|12-2_PhotoEditor_StyleTransfer_v3.0_Comic.tflite|g' \
+                -e 's|watercolor\.tflite|12-3_PhotoEditor_StyleTransfer_v3.0_WaterColor.tflite|g' \
+                -e 's|blue_ink\.tflite|12-4_PhotoEditor_StyleTransfer_v3.0_BlueInk.tflite|g' \
+                -e 's|pastel\.tflite|12-5_PhotoEditor_StyleTransfer_v3.0_Pastel.tflite|g' \
+                -e 's|marker\.tflite|12-6_PhotoEditor_StyleTransfer_v3.0_Marker.tflite|g' \
+                -e 's|line_art\.tflite|12-7_PhotoEditor_StyleTransfer_v3.0_LineArt.tflite|g' \
+                -e 's|oil_paint\.tflite|12-8_PhotoEditor_StyleTransfer_v3.0_OilPaint.tflite|g' \
+                -e 's|cubist\.tflite|12-9_PhotoEditor_StyleTransfer_v3.0_Cubist.tflite|g' \
+                -e 's|pen_and_wash\.tflite|12-10_PhotoEditor_StyleTransfer_v3.0_PenAndWash.tflite|g' \
+                "$SDB/style.info"
+        fi
+        [ -f "$SDB/segmentation.info" ] && \
+            sed -i 's|segmentation\.tflite|12-27_PhotoEditor_StyleTransfer_v3.0_Segmentation.tflite|g' \
+            "$SDB/segmentation.info"
     fi
 
-    # Portrait / human-seg config used by Photo Assist
+    # Keep GPU runtime on objecteraser, inpainting, style, reflection (S23 port behavior).
+    # Blanket gpu→cpu was causing Erase/Styles/Object Creation to fail silently on A325F.
+
+    # Portrait segmentation for Background Blur + editor (A346E NPU .dla / missing .snf on A325F).
     local BOKEH="${SYS}/cameradata/portrait_data/single_bokeh_feature.json"
+    local PDIR="${SYS}/cameradata/portrait_data"
     if [ -f "$BOKEH" ]; then
+        mkdir -p "$PDIR"
         sed -i 's/"ModelType": "MODEL_TYPE_INSTANCE_CAPTURE"/"ModelType": "MODEL_TYPE_OBJ_INSTANCE_CAPTURE"/g' "$BOKEH"
-        sed -i 's/"ComputeUnit": "COMPUTE_GPU"/"ComputeUnit": "COMPUTE_CPU"/g' "$BOKEH"
 
-        # Prefer models that actually exist on the target firmware tree
-        local PDIR="${SYS}/cameradata/portrait_data"
-        if [ ! -f "$PDIR/SRIB_HumanInsSeg_FP16_V008.snf" ] && [ -f "$PDIR/SRIB_HumanInsSeg_FP16_V008.tflite" ]; then
-            sed -i 's|SRIB_HumanInsSeg_FP16_V008\.snf|SRIB_HumanInsSeg_FP16_V008.tflite|g' "$BOKEH"
-            sed -i 's/"ModelFormat": "SNF"/"ModelFormat": "SNAPLITE"/g' "$BOKEH"
-            sed -i 's/"ExecutionDataType": "QASYMM8"/"ExecutionDataType": "FLOAT16"/g' "$BOKEH"
-        fi
-        if [ ! -f "$PDIR/SRIB_HumanSegLite_INT8_V004.snf" ]; then
-            if [ -f "$PDIR/SRIB_HumanSegVideoLite_INT8_V101.tflite" ]; then
-                sed -i 's|SRIB_HumanSegLite_INT8_V004\.snf|SRIB_HumanSegVideoLite_INT8_V101.tflite|g' "$BOKEH"
-                sed -i 's/"ModelType": "MODEL_TYPE_SEG_LIVE"/"ModelType": "MODEL_TYPE_SEM_SEG_VIDEO"/g' "$BOKEH"
-            elif [ -f "$PDIR/SRIB_HumanSegLite_INT8_V004.tflite" ]; then
-                sed -i 's|SRIB_HumanSegLite_INT8_V004\.snf|SRIB_HumanSegLite_INT8_V004.tflite|g' "$BOKEH"
-            fi
-        fi
+        python3 - "$BOKEH" "$PDIR" "$SYS" <<'PY'
+import json, sys, os, glob, shutil
 
-        # Null missing portrait weights so PhotoEditor does not crash (A346E NPU .dla on A325F).
-        python3 - "$BOKEH" "$SYS" <<'PY'
-import json, sys, os
-bokeh_path, sys_root = sys.argv[1], sys.argv[2]
+bokeh_path, pdir, sys_root = sys.argv[1], sys.argv[2], sys.argv[3]
+
 with open(bokeh_path) as f:
     data = json.load(f)
-for key in ("capture_segmentation", "preview_1st_segmentation"):
+
+def fs_path(system_path):
+    if not system_path:
+        return None
+    rel = system_path.lstrip("/")
+    if rel.startswith("system/"):
+        rel = rel[7:]
+    for base in (sys_root, os.path.join(sys_root, "system")):
+        candidate = os.path.join(base, rel)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+def system_path(rel):
+    rel = rel.lstrip("/")
+    if not rel.startswith("system/"):
+        rel = "system/" + rel
+    return "/" + rel
+
+portrait_files = []
+if os.path.isdir(pdir):
+    portrait_files = [os.path.basename(p) for p in glob.glob(pdir + "/*") if os.path.isfile(p)]
+
+seg_long = "12-27_PhotoEditor_StyleTransfer_v3.0_Segmentation.tflite"
+seg_src = os.path.join(sys_root, "etc/style_transfer/db", seg_long)
+if not os.path.isfile(seg_src):
+    seg_src = os.path.join(sys_root, "etc/style_transfer/db/segmentation.tflite")
+
+portrait_seg_name = "PortraitEditor_Segmentation.tflite"
+portrait_seg_fs = os.path.join(pdir, portrait_seg_name)
+if os.path.isfile(seg_src):
+    shutil.copy2(seg_src, portrait_seg_fs)
+    if portrait_seg_name not in portrait_files:
+        portrait_files.append(portrait_seg_name)
+
+hum_det = os.path.join(sys_root, "etc/style_transfer/db/12-26_PhotoEditor_StyleTransfer_v1.0.0_HumanDetector.tflite")
+hum_name = "SRIB_HumanDetector_V1.tflite"
+if os.path.isfile(hum_det):
+    shutil.copy2(hum_det, os.path.join(pdir, hum_name))
+    if hum_name not in portrait_files:
+        portrait_files.append(hum_name)
+
+portrait_seg_path = system_path("cameradata/portrait_data/" + portrait_seg_name)
+hum_det_path = system_path("cameradata/portrait_data/" + hum_name)
+
+def pick_portrait(candidates):
+    for name in portrait_files:
+        lower = name.lower()
+        for token in candidates:
+            if token.lower() in lower and name.endswith(".snf"):
+                return system_path("cameradata/portrait_data/" + name)
+    return None
+
+def weight_is_usable(sec):
+    wf = sec.get("Weightfile")
+    if not wf or wf.endswith(".dla"):
+        return False
+    if sec.get("ComputeUnit") == "COMPUTE_NPU":
+        return False
+    return fs_path(wf) is not None
+
+def configure_section(key, snf_candidates, tflite_fallback):
     sec = data.get(key)
-    if not sec or not sec.get("Weightfile"):
-        continue
-    wf = sec["Weightfile"]
-    rel = wf.lstrip("/")
-    candidates = [
-        os.path.join(sys_root, rel),
-        os.path.join(sys_root, "system", rel.lstrip("system/")),
-    ]
-    if not any(os.path.isfile(p) for p in candidates):
+    if not sec:
+        return
+    if weight_is_usable(sec):
+        if sec.get("ComputeUnit") == "COMPUTE_NPU":
+            sec["ComputeUnit"] = "COMPUTE_CPU"
+        return
+    picked = pick_portrait(snf_candidates)
+    if picked and fs_path(picked):
+        sec["Weightfile"] = picked
+        sec["ComputeUnit"] = "COMPUTE_GPU"
+        sec["ModelFormat"] = "SNF"
+        return
+    fallback = tflite_fallback if fs_path(tflite_fallback) else portrait_seg_path
+    if not fs_path(fallback):
         sec["Weightfile"] = None
-        sec["ComputeUnit"] = None
-        sec["ModelType"] = None
+        return
+    sec["Weightfile"] = fallback
+    sec["ComputeUnit"] = "COMPUTE_CPU"
+    sec["ExecutionDataType"] = "QASYMM8"
+    sec["ModelFormat"] = "SNAPLITE"
+    if key == "preview_1st_segmentation":
+        sec["ModelType"] = "MODEL_TYPE_SEM_SEG_VIDEO"
+    elif key == "capture_segmentation":
+        sec["ModelType"] = "MODEL_TYPE_SEM_SEG"
+
+configure_section(
+    "capture_segmentation",
+    ["HumanInsSeg", "HumanSeg"],
+    hum_det_path if fs_path(hum_det_path) else portrait_seg_path,
+)
+configure_section(
+    "preview_1st_segmentation",
+    ["HumanSegLite", "HumanSegVideo", "HumanSeg"],
+    portrait_seg_path,
+)
+
 with open(bokeh_path, "w") as f:
     json.dump(data, f, indent=4)
     f.write("\n")
@@ -2216,8 +2294,18 @@ VERIFY_PHOTO_EDITOR_AI() {
     for model in \
         "${SYS}/etc/objectremoval/db/12-12_PhotoEditor_ObjectEraser_v6.2.tflite" \
         "${SYS}/etc/objectremoval/db/objecteraser.tflite" \
+        "${SYS}/etc/objectremoval/db/12-28_PhotoEditor_ObjectEraser_v6.1_InstanceSeg.tflite" \
+        "${SYS}/etc/objectremoval/db/instanceseg.tflite" \
+        "${SYS}/etc/objectremoval/db/12-29_PhotoEditor_ObjectEraser_v4.2_InteractiveSeg.tflite" \
+        "${SYS}/etc/objectremoval/db/interactiveseg.tflite" \
+        "${SYS}/etc/inpainting/db/12-11_PhotoEditor_SpotFixer_v3.0.tflite" \
+        "${SYS}/etc/inpainting/db/inpainting.tflite" \
+        "${SYS}/etc/style_transfer/db/12-27_PhotoEditor_StyleTransfer_v3.0_Segmentation.tflite" \
+        "${SYS}/etc/style_transfer/db/12-1_PhotoEditor_StyleTransfer_v3.0_ColorPencil.tflite" \
+        "${SYS}/etc/style_transfer/db/12-2_PhotoEditor_StyleTransfer_v3.0_Comic.tflite" \
         "${SYS}/etc/shadowremoval/db/shadow_removal.tflite" \
-        "${SYS}/etc/reflectionremoval/db/reflection_removal.tflite"
+        "${SYS}/etc/reflectionremoval/db/reflection_removal.tflite" \
+        "${SYS}/cameradata/portrait_data/PortraitEditor_Segmentation.tflite"
     do
         if [ -f "$model" ]; then
             echo "  OK: $(basename "$model")"
@@ -2226,6 +2314,65 @@ VERIFY_PHOTO_EDITOR_AI() {
             MISSING=1
         fi
     done
+
+    local BOKEH="${SYS}/cameradata/portrait_data/single_bokeh_feature.json"
+    if [ -f "$BOKEH" ]; then
+        if python3 - "$BOKEH" "$SYS" <<'PY'
+import json, sys, os
+bokeh_path, sys_root = sys.argv[1], sys.argv[2]
+
+def fs_path(system_path):
+    if not system_path:
+        return None
+    rel = system_path.lstrip("/")
+    if rel.startswith("system/"):
+        rel = rel[7:]
+    for base in (sys_root, os.path.join(sys_root, "system")):
+        candidate = os.path.join(base, rel)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+with open(bokeh_path) as f:
+    data = json.load(f)
+
+failed = []
+for key in ("capture_segmentation", "preview_1st_segmentation"):
+    sec = data.get(key) or {}
+    wf = sec.get("Weightfile")
+    if not wf or not fs_path(wf):
+        failed.append(key)
+
+if failed:
+    for key in failed:
+        print("  FAIL: portrait %s weight missing on disk (Background Blur will fail)" % key)
+    sys.exit(1)
+
+print("  OK: portrait segmentation weights on disk")
+sys.exit(0)
+PY
+        then
+            :
+        else
+            MISSING=1
+        fi
+    fi
+
+    # objecteraser + style + inpainting need GPU runtime (same as S23 port)
+    local GPU_OK=1
+    for info in \
+        "${SYS}/etc/objectremoval/db/objecteraser.info" \
+        "${SYS}/etc/style_transfer/db/style.info" \
+        "${SYS}/etc/inpainting/db/inpainting.info"
+    do
+        if [ -f "$info" ] && grep -q '"runtime": "gpu"' "$info" 2>/dev/null; then
+            echo "  OK: GPU runtime in $(basename "$info")"
+        elif [ -f "$info" ]; then
+            echo "  FAIL: GPU runtime missing in $(basename "$info") (erase/styles/object creation may fail)"
+            GPU_OK=0
+        fi
+    done
+    [ "$GPU_OK" -eq 1 ] || MISSING=1
 
     if [ -f "${SYS}/etc/permissions/privapp-permissions-com.sec.android.mimage.photoretouching.xml" ]; then
         echo "  OK: PhotoEditor privapp permissions"
