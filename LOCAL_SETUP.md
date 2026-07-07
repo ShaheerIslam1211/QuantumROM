@@ -77,22 +77,22 @@ At build time, local firmware is copied into `FW/<TARGET_DEVICE>/` (the path use
 
 `run_local.sh` exports the same variables used by the Actions workflow / `sixteen.sh`:
 
-| Variable | Role | Default (matches workflow) |
-|---|---|---|
-| `STOCK_DEVICE` | Device you are porting **for** (`None` if unsupported) | `SM-A225F` |
-| `USE_UI_8_TETHERING_APEX` | `True` if kernel BPF is below 5.10 | `False` |
-| `TARGET_DEVICE` | Device you are porting **from** (firmware model) | `SM-A346E` |
-| `TARGET_DEVICE_CSC` | CSC code (kept for parity with CI) | `BKD` |
-| `TARGET_DEVICE_IMEI` | IMEI (kept for parity with CI; not used for download locally) | `353435774197736` |
-| `OUTPUT_FILESYSTEM` | `erofs` / `ext4` / `f2fs` | `erofs` |
+| Variable                  | Role                                                          | Default (matches workflow) |
+| ------------------------- | ------------------------------------------------------------- | -------------------------- |
+| `STOCK_DEVICE`            | Device you are porting **for** (`None` if unsupported)        | `SM-A225F`                 |
+| `USE_UI_8_TETHERING_APEX` | `True` if kernel BPF is below 5.10                            | `False`                    |
+| `TARGET_DEVICE`           | Device you are porting **from** (firmware model)              | `SM-A346E`                 |
+| `TARGET_DEVICE_CSC`       | CSC code (kept for parity with CI)                            | `BKD`                      |
+| `TARGET_DEVICE_IMEI`      | IMEI (kept for parity with CI; not used for download locally) | `353435774197736`          |
+| `OUTPUT_FILESYSTEM`       | `erofs` / `ext4` / `f2fs`                                     | `erofs`                    |
 
 Internal directories (set by `sixteen.sh`, also exported by `run_local.sh`):
 
-| Variable | Value |
-|---|---|
-| `FIRM_DIR` | `$(pwd)/FW` |
-| `OUT_DIR` | `$(pwd)/OUT` |
-| `WORK_DIR` | `$(pwd)/WORK` |
+| Variable      | Value                       |
+| ------------- | --------------------------- |
+| `FIRM_DIR`    | `$(pwd)/FW`                 |
+| `OUT_DIR`     | `$(pwd)/OUT`                |
+| `WORK_DIR`    | `$(pwd)/WORK`               |
 | `DEVICES_DIR` | `$(pwd)/QuantumROM/Devices` |
 
 Optional CI-only items **not** required for a local build:
